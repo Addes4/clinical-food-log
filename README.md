@@ -1,20 +1,30 @@
 # Clinical Food Log
 
-A privacy-aware IBS/IBD food and symptom logging MVP for patients and clinicians.
+Privacy-aware IBS/IBD food and symptom logging app for patients, clinicians, and admins.
 
-## Assumptions
+## Current Scope
 
-- Analytics are framed as **possible associations**, never causation. No AI diagnosis.
-- Two roles only: Patient and Clinician.
-- Clinicians are pre-assigned to patients via seed data (no admin UI in MVP).
-- Local SQLite database — no external infrastructure required.
-- Swedish and English food names are normalized to canonical forms.
+- Multi-role app: **Patient**, **Clinician**, **Admin**
+- Food/symptom/context logging with data-isolation and role guards
+- Food normalization (Swedish + English) with canonical mapping
+- Clinician analytics (possible associations only, never causation)
+- Symptom reminders (custom time, snooze, quiet hours)
+- Favorite/frequent food shortcuts in meal logging
+- Medication schedule + taken/missed dose tracking
+- Hydration tracking (water logs)
+- Stool pattern (Bristol) trend charts
+- Shared clinician/patient care plan
+- Patient goal tracking + smart nudges
+- Duplicate-entry detection for key log flows
+- Admin onboarding for clinician account creation + assignment
+- Admin research export with optional de-identification mode
 
 ## Setup
 
 ```bash
 npm install
-npx prisma db push
+cp .env.example .env.local
+npm run db:push
 npm run db:seed
 npm run dev
 ```
@@ -23,17 +33,19 @@ Open http://localhost:3000
 
 ## Demo Accounts
 
-| Role      | Email                  | Password |
-|-----------|------------------------|----------|
-| Patient   | anna@example.com       | password |
-| Patient   | bjorn@example.com      | password |
-| Clinician | doctor@example.com     | password |
+| Role      | Email             | Password |
+|-----------|-------------------|----------|
+| Patient   | anna@example.com  | password |
+| Patient   | bjorn@example.com | password |
+| Clinician | doctor@example.com| password |
+| Admin     | admin@example.com | password |
 
 ## Commands
 
 ```bash
 npm run dev        # Start development server
 npm run build      # Production build
+npm run lint       # Typecheck fallback when ESLint unavailable
 npm test           # Run tests
 npm run db:push    # Sync Prisma schema to DB
 npm run db:seed    # Re-seed database with demo data
@@ -43,75 +55,119 @@ npm run db:studio  # Open Prisma Studio
 ## Architecture
 
 ### Stack
+
 - **Next.js 14** (App Router) + TypeScript
-- **NextAuth v4** with credentials provider and JWT sessions
-- **Prisma + SQLite** — file-based DB at `prisma/dev.db`
-- **Tailwind CSS** — custom components, no UI framework
-- **bcryptjs** — password hashing
-- **tsx** — TypeScript seed script runner
-- **Jest + ts-jest** — unit tests
+- **NextAuth v4** credentials auth + JWT sessions
+- **Prisma + SQLite** (`prisma/dev.db`)
+- **Tailwind CSS**
+- **Jest + ts-jest** for unit tests
+
+### Roles and Access
+
+- **Patient**: dashboard, timeline, meal/symptom/context logs, reminders, hydration, medication, goals, care plan
+- **Clinician**: assigned patient list + patient detail analytics + shared care plan editing
+- **Admin**: clinician onboarding and research export tools
+
+Middleware (`src/middleware.ts`) enforces route-level role restrictions.
 
 ### Route Groups
+
+```text
+/signin                      -> (auth)
+/dashboard                   -> (patient)
+/timeline                    -> (patient)
+/logs/*                      -> (patient)
+/hydration                   -> (patient)
+/medication                  -> (patient)
+/care-plan                   -> (patient)
+/goals                       -> (patient)
+/settings/reminders          -> (patient)
+/patients                    -> (clinician)
+/patients/[id]               -> (clinician)
+/admin/onboarding            -> (admin)
+/admin/research              -> (admin)
 ```
-/signin                    → (auth) group
-/dashboard                 → (patient) group [PATIENT only]
-/timeline                  → (patient) group [PATIENT only]
-/logs/meal/new             → (patient) group
-/logs/meal/[id]/edit       → (patient) group
-/logs/symptom/new          → (patient) group
-/logs/symptom/[id]/edit    → (patient) group
-/logs/context/new          → (patient) group
-/logs/context/[id]/edit    → (patient) group
-/patients                  → (clinician) group [CLINICIAN only]
-/patients/[id]             → (clinician) group [CLINICIAN only]
-```
 
-Middleware (`src/middleware.ts`) enforces role-based access at the edge.
+## Key Features
 
-### Data Flow
-1. Patient logs a meal via form → POST `/api/logs/meal`
-2. Server runs food normalization pipeline on each food item
-3. Canonical foods are upserted into `FoodCanonical` table
-4. Analytics queries join meal food items with symptom logs by time window
+### Logging + Normalization
 
-### Food Normalization Pipeline
-Located in `src/lib/food-normalization/`:
-1. Lowercase + trim + collapse whitespace
-2. Exact synonym dictionary lookup (Swedish + English)
-3. Brand detection (Scan, Arla, Felix, Oatly, ICA…) → strip brand, retry lookup
-4. Modifier stripping (laktosfri, ekologisk, light…) → retry lookup
-5. Levenshtein fuzzy match (similarity ≥ 0.8)
-6. Fallback: use normalized input as canonical
+- Meal logging normalizes raw foods into canonical foods with confidence scores.
+- Favorite/frequent suggestions appear in meal form shortcuts.
+- Duplicate detection blocks probable accidental duplicate submissions (`409`).
 
-Confidence levels: 0.95 exact → 0.85 brand+exact → 0.80 modifier-stripped → 0.65 fuzzy → 0.50 unknown
+### Analytics + Trends
 
-### Analytics
-Located in `src/lib/analytics/`:
+- Food trigger analysis from high-symptom windows (`triggers.ts`)
+- Daily symptom averages (`averages.ts`)
+- Adherence rate over rolling windows (`adherence.ts`)
+- Goal progress calculations (`goals.ts`)
+- Smart nudges (missing symptom logs, stress trend, missed meds, hydration) (`nudges.ts`)
 
-- **triggers.ts** — For each high-symptom event (avg score ≥5), find foods eaten in the preceding 24h. Count associations vs total occurrences per food. Min 2 occurrences required.
-- **averages.ts** — Daily symptom averages; symptom averages by meal type (±4h window).
-- **adherence.ts** — Count distinct days with ≥1 log in the last 21 days.
+### Medication and Hydration
 
-### Session / Auth
-- `getServerSession(authOptions)` in server components and API routes
-- `useSession()` in client components
-- JWT token carries: `id` (userId), `role`, `profileId`
-- Type augmentation in `src/types/next-auth.d.ts`
+- Medication schedules (time-of-day) with taken/missed logs
+- Missed-dose summary indicators
+- Water intake logging + daily total trend
+
+### Shared Care Plan
+
+- Single shared patient-clinician care plan per assignment
+- Editable by both parties
+- Tracks last updater role
+
+### Admin Tools
+
+- Create clinician accounts and assign patient panels
+- Generate research export payloads
+- Optional de-identification mode masks patient identifiers
+
+## Data Model Additions
+
+Beyond core logging models, schema includes:
+
+- `SymptomReminder`
+- `FavoriteFood`
+- `MedicationSchedule`
+- `MedicationLog`
+- `WaterLog`
+- `CarePlan`
+- `PatientGoal`
+- `AdminProfile`
+
+See [prisma/schema.prisma](./prisma/schema.prisma).
+
+## API Overview
+
+New API groups:
+
+- `/api/reminders`
+- `/api/foods/suggestions`
+- `/api/foods/favorites`
+- `/api/logs/water`
+- `/api/medication/schedules`
+- `/api/medication/logs`
+- `/api/goals`
+- `/api/goals/progress`
+- `/api/care-plan/[patientId]`
+- `/api/admin/onboarding`
+- `/api/admin/research-export`
 
 ## Seed Data
 
-**Anna** (anna@example.com): Frequent pasta + coffee eater, clear IBS pattern — high pain/bloating scores on pasta days (alt days), lower on falukorv/potatis days.
+Seed now creates:
 
-**Björn** (bjorn@example.com): More varied diet (lax, kyckling, havregrynsgröt), lower and stable symptom scores.
+- 4 users (2 patients, 1 clinician, 1 admin)
+- 21-day meal/symptom/context history for both patients
+- hydration logs, medication schedules/logs, reminders
+- patient goals and clinician-shared care plans
 
-**Dr. Maria Holm** (doctor@example.com): Assigned to both patients. Can view timelines and analytics for both.
-
-## Tests
+## Testing
 
 ```bash
 npm test
 ```
 
-- `tests/food-normalization.test.ts` — exact matches, brand detection, modifier stripping, fuzzy matching, unknown foods, confidence ordering
-- `tests/analytics.test.ts` — trigger calculation, daily averages, adherence logic
-- `tests/api-access.test.ts` — role-based access control, data isolation
+- `tests/food-normalization.test.ts`
+- `tests/analytics.test.ts`
+- `tests/api-access.test.ts`
