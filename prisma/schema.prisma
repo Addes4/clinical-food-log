@@ -1,0 +1,129 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Role: PATIENT | CLINICIAN
+// MealType: BREAKFAST | LUNCH | DINNER | SNACK | OTHER
+// Exercise: NONE | LIGHT | MODERATE | INTENSE
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         String   // PATIENT | CLINICIAN
+  createdAt    DateTime @default(now())
+
+  patientProfile   PatientProfile?
+  clinicianProfile ClinicianProfile?
+}
+
+model PatientProfile {
+  id          String @id @default(cuid())
+  userId      String @unique
+  displayName String
+
+  user        User                         @relation(fields: [userId], references: [id])
+  assignments ClinicianPatientAssignment[]
+  mealLogs    MealLog[]
+  symptomLogs SymptomLog[]
+  contextLogs ContextLog[]
+}
+
+model ClinicianProfile {
+  id          String @id @default(cuid())
+  userId      String @unique
+  displayName String
+
+  user        User                         @relation(fields: [userId], references: [id])
+  assignments ClinicianPatientAssignment[]
+}
+
+model ClinicianPatientAssignment {
+  id          String   @id @default(cuid())
+  clinicianId String
+  patientId   String
+  assignedAt  DateTime @default(now())
+
+  clinician ClinicianProfile @relation(fields: [clinicianId], references: [id])
+  patient   PatientProfile   @relation(fields: [patientId], references: [id])
+
+  @@unique([clinicianId, patientId])
+}
+
+model MealLog {
+  id        String   @id @default(cuid())
+  patientId String
+  datetime  DateTime
+  mealType  String   // BREAKFAST | LUNCH | DINNER | SNACK | OTHER
+  title     String
+  notes     String?
+
+  patient   PatientProfile @relation(fields: [patientId], references: [id])
+  foodItems MealFoodItem[]
+}
+
+model MealFoodItem {
+  id              String  @id @default(cuid())
+  mealLogId       String
+  rawInput        String
+  canonicalFoodId String?
+  brand           String?
+  productName     String?
+  quantity        Float?
+  unit            String?
+  confidence      Float
+
+  mealLog       MealLog        @relation(fields: [mealLogId], references: [id], onDelete: Cascade)
+  canonicalFood FoodCanonical? @relation(fields: [canonicalFoodId], references: [id])
+}
+
+model FoodCanonical {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  category String?
+
+  foodItems MealFoodItem[]
+  synonyms  FoodSynonym[]
+}
+
+model FoodSynonym {
+  id              String @id @default(cuid())
+  synonym         String @unique
+  canonicalFoodId String
+
+  canonical FoodCanonical @relation(fields: [canonicalFoodId], references: [id])
+}
+
+model SymptomLog {
+  id            String   @id @default(cuid())
+  patientId     String
+  datetime      DateTime
+  painScore     Int
+  bloatingScore Int
+  urgencyScore  Int
+  nauseaScore   Int
+  bowelMovement String
+  bristolScale  Int?
+  notes         String?
+
+  patient PatientProfile @relation(fields: [patientId], references: [id])
+}
+
+model ContextLog {
+  id              String   @id @default(cuid())
+  patientId       String
+  datetime        DateTime
+  stressScore     Int
+  sleepHours      Float
+  medicationTaken String?
+  alcohol         Boolean
+  exercise        String   // NONE | LIGHT | MODERATE | INTENSE
+  notes           String?
+
+  patient PatientProfile @relation(fields: [patientId], references: [id])
+}
