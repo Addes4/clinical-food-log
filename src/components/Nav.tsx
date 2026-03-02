@@ -13,17 +13,32 @@ interface NavLink {
 const patientLinks: NavLink[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/timeline', label: 'Timeline' },
+  { href: '/hydration', label: 'Hydration' },
+  { href: '/medication', label: 'Medication' },
+  { href: '/care-plan', label: 'Care Plan' },
+  { href: '/goals', label: 'Goals' },
+  { href: '/settings/reminders', label: 'Reminders' },
 ]
 
 const clinicianLinks: NavLink[] = [
   { href: '/patients', label: 'Patients' },
 ]
 
+const adminLinks: NavLink[] = [
+  { href: '/admin/onboarding', label: 'Onboarding' },
+  { href: '/admin/research', label: 'Research Export' },
+]
+
 export function Nav() {
   const pathname = usePathname()
   const { data: session } = useSession()
 
-  const links = session?.user.role === 'CLINICIAN' ? clinicianLinks : patientLinks
+  const links =
+    session?.user.role === 'CLINICIAN'
+      ? clinicianLinks
+      : session?.user.role === 'ADMIN'
+        ? adminLinks
+        : patientLinks
 
   return (
     <nav className="bg-white border-b border-gray-200">
@@ -33,7 +48,7 @@ export function Nav() {
             <span className="text-brand-600 font-semibold text-sm tracking-wide">
               FoodLog
             </span>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 overflow-x-auto max-w-[52rem]">
               {links.map((link) => (
                 <Link
                   key={link.href}

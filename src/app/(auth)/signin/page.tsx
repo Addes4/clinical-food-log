@@ -97,6 +97,7 @@ function SignInForm() {
             <p>Patient: anna@example.com / password</p>
             <p>Patient: bjorn@example.com / password</p>
             <p>Clinician: doctor@example.com / password</p>
+            <p>Admin: admin@example.com / password</p>
           </div>
         </div>
       </CardContent>

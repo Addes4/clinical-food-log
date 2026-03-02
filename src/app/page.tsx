@@ -13,5 +13,9 @@ export default async function RootPage() {
     redirect('/patients')
   }
 
+  if (session.user.role === 'ADMIN') {
+    redirect('/admin/onboarding')
+  }
+
   redirect('/dashboard')
 }

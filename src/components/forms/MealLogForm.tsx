@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { FoodItemInput, FoodItem } from '@/components/FoodItemInput'
 import { MealType } from '@/types'
+import { Badge } from '@/components/ui/badge'
 
 interface MealLogFormProps {
   initialData?: {
@@ -22,6 +23,12 @@ interface MealLogFormProps {
 }
 
 const MEAL_TYPES: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK', 'OTHER']
+
+interface FoodSuggestion {
+  name: string
+  source: 'favorite' | 'frequent'
+  count?: number
+}
 
 function toLocalDatetimeString(date: Date): string {
   const offset = date.getTimezoneOffset()
@@ -50,6 +57,27 @@ export function MealLogForm({ initialData }: MealLogFormProps) {
   )
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [suggestions, setSuggestions] = useState<FoodSuggestion[]>([])
+
+  useEffect(() => {
+    async function loadSuggestions() {
+      const res = await fetch('/api/foods/suggestions?limit=20')
+      if (!res.ok) return
+      const data = await res.json()
+      setSuggestions(data.suggestions ?? [])
+    }
+
+    void loadSuggestions()
+  }, [])
+
+  function addFoodShortcut(name: string) {
+    const emptyIndex = foodItems.findIndex((item) => !item.rawInput.trim())
+    if (emptyIndex >= 0) {
+      setFoodItems((prev) => prev.map((item, idx) => (idx === emptyIndex ? { ...item, rawInput: name } : item)))
+      return
+    }
+    setFoodItems((prev) => [...prev, { rawInput: name, quantity: '', unit: '' }])
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -143,6 +171,25 @@ export function MealLogForm({ initialData }: MealLogFormProps) {
       <div>
         <Label>Food Items</Label>
         <FoodItemInput items={foodItems} onChange={setFoodItems} />
+        {suggestions.length > 0 && (
+          <div className="mt-2">
+            <p className="text-xs text-gray-500 mb-1">Favorites & frequent shortcuts</p>
+            <div className="flex flex-wrap gap-1.5">
+              {suggestions.map((suggestion) => (
+                <button
+                  key={`${suggestion.source}-${suggestion.name}`}
+                  type="button"
+                  onClick={() => addFoodShortcut(suggestion.name)}
+                >
+                  <Badge variant={suggestion.source === 'favorite' ? 'success' : 'default'}>
+                    {suggestion.name}
+                    {suggestion.source === 'favorite' ? ' ★' : ''}
+                  </Badge>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div>

@@ -7,6 +7,7 @@ import {
   requireSession,
 } from '@/lib/api-helpers'
 import { prisma } from '@/lib/db'
+import { findDuplicateSymptomLog } from '@/lib/duplicates'
 
 export async function POST(req: NextRequest) {
   const { error, session } = await requireSession('PATIENT')
@@ -48,6 +49,23 @@ export async function POST(req: NextRequest) {
   }
   if (notes !== undefined && notes !== null && typeof notes !== 'string') {
     return badRequest('notes must be a string')
+  }
+
+  const duplicateId = await findDuplicateSymptomLog({
+    patientId: session!.user.profileId,
+    datetime: parsedDate.value,
+    painScore,
+    bloatingScore,
+    urgencyScore,
+    nauseaScore,
+    bowelMovement: typeof bowelMovement === 'string' ? bowelMovement : '',
+    bristolScale: bristolScale == null ? null : bristolScale,
+  })
+  if (duplicateId) {
+    return NextResponse.json(
+      { error: 'Possible duplicate symptom log detected.', duplicateId },
+      { status: 409 }
+    )
   }
 
   const log = await prisma.symptomLog.create({

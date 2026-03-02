@@ -48,6 +48,14 @@ async function main() {
   console.log('Seeding database...')
 
   // Clean slate
+  await prisma.medicationLog.deleteMany()
+  await prisma.medicationSchedule.deleteMany()
+  await prisma.waterLog.deleteMany()
+  await prisma.symptomReminder.deleteMany()
+  await prisma.favoriteFood.deleteMany()
+  await prisma.carePlan.deleteMany()
+  await prisma.patientGoal.deleteMany()
+  await prisma.adminProfile.deleteMany()
   await prisma.mealFoodItem.deleteMany()
   await prisma.mealLog.deleteMany()
   await prisma.symptomLog.deleteMany()
@@ -92,6 +100,15 @@ async function main() {
     include: { clinicianProfile: true },
   })
 
+  await prisma.user.create({
+    data: {
+      email: 'admin@example.com',
+      passwordHash,
+      role: 'ADMIN',
+      adminProfile: { create: { displayName: 'Operations Admin', clinicName: 'Stockholm GI Clinic' } },
+    },
+  })
+
   const annaId = annaUser.patientProfile!.id
   const bjornId = bjornUser.patientProfile!.id
   const clinicianId = doctorUser.clinicianProfile!.id
@@ -101,6 +118,68 @@ async function main() {
     data: [
       { clinicianId, patientId: annaId },
       { clinicianId, patientId: bjornId },
+    ],
+  })
+
+  // Shared care plans (clinician + patient can both edit in app)
+  await prisma.carePlan.createMany({
+    data: [
+      {
+        patientId: annaId,
+        clinicianId,
+        title: 'IBS symptom stabilization',
+        goals: 'Reduce pain/bloating peaks by identifying repeat triggers and improving adherence.',
+        notes: 'Start with pasta/coffee moderation and daily hydration tracking.',
+        lastUpdatedByRole: 'CLINICIAN',
+      },
+      {
+        patientId: bjornId,
+        clinicianId,
+        title: 'Maintain stable baseline',
+        goals: 'Keep symptoms low and monitor any new trigger foods.',
+        notes: 'Continue current meal rhythm and moderate exercise pattern.',
+        lastUpdatedByRole: 'CLINICIAN',
+      },
+    ],
+  })
+
+  // Goal tracking targets
+  await prisma.patientGoal.createMany({
+    data: [
+      { patientId: annaId, metric: 'ADHERENCE_RATE', targetValue: 0.8, periodDays: 21, active: true },
+      { patientId: annaId, metric: 'WATER_DAILY_ML', targetValue: 1800, periodDays: 7, active: true },
+      { patientId: bjornId, metric: 'ADHERENCE_RATE', targetValue: 0.8, periodDays: 21, active: true },
+      { patientId: bjornId, metric: 'WATER_DAILY_ML', targetValue: 2000, periodDays: 7, active: true },
+    ],
+  })
+
+  // Symptom reminder settings (custom times + snooze + quiet hours)
+  await prisma.symptomReminder.createMany({
+    data: [
+      {
+        patientId: annaId,
+        label: 'Morning symptom check-in',
+        timeOfDay: '09:00',
+        snoozeMinutes: 20,
+        quietHoursStart: '22:30',
+        quietHoursEnd: '07:00',
+      },
+      {
+        patientId: annaId,
+        label: 'Evening symptom check-in',
+        timeOfDay: '20:30',
+        snoozeMinutes: 15,
+        quietHoursStart: '22:30',
+        quietHoursEnd: '07:00',
+      },
+      {
+        patientId: bjornId,
+        label: 'Daily symptom check',
+        timeOfDay: '19:30',
+        snoozeMinutes: 10,
+        quietHoursStart: '23:00',
+        quietHoursEnd: '06:30',
+      },
     ],
   })
 
@@ -237,6 +316,21 @@ async function main() {
         medicationTaken: day % 3 === 0 ? 'Mebeverine 135mg' : null,
       },
     })
+
+    await prisma.waterLog.create({
+      data: {
+        patientId: annaId,
+        datetime: daysAgo(day, 16, 0),
+        amountMl: day % 2 === 0 ? 1200 : 1700,
+      },
+    })
+    await prisma.waterLog.create({
+      data: {
+        patientId: annaId,
+        datetime: daysAgo(day, 20, 15),
+        amountMl: day % 2 === 0 ? 350 : 600,
+      },
+    })
   }
 
   // ── Björn's logs (more varied diet, lower symptoms) ───────────────────
@@ -339,17 +433,106 @@ async function main() {
         exercise: ['LIGHT', 'MODERATE', 'MODERATE', 'LIGHT', 'INTENSE', 'NONE', 'LIGHT'][day % 7],
       },
     })
+
+    await prisma.waterLog.create({
+      data: {
+        patientId: bjornId,
+        datetime: daysAgo(day, 15, 30),
+        amountMl: 1800 + (day % 3) * 200,
+      },
+    })
   }
+
+  await prisma.medicationSchedule.createMany({
+    data: [
+      {
+        patientId: annaId,
+        medicationName: 'Mebeverine',
+        dosage: '135mg',
+        instructions: 'Before meals',
+        timeOfDay: '08:00',
+      },
+      {
+        patientId: annaId,
+        medicationName: 'Probiotic',
+        dosage: '1 capsule',
+        instructions: 'With breakfast',
+        timeOfDay: '09:00',
+      },
+    ],
+  })
+
+  const bjornMed = await prisma.medicationSchedule.create({
+    data: {
+      patientId: bjornId,
+      medicationName: 'Vitamin D',
+      dosage: '1000 IU',
+      instructions: 'Daily',
+      timeOfDay: '08:30',
+    },
+  })
+
+  const annaSchedules = await prisma.medicationSchedule.findMany({
+    where: { patientId: annaId },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  for (let day = 7; day >= 1; day--) {
+    for (const schedule of annaSchedules) {
+      const missed = day % 3 === 0 && schedule.medicationName === 'Probiotic'
+      await prisma.medicationLog.create({
+        data: {
+          patientId: annaId,
+          scheduleId: schedule.id,
+          datetime: daysAgo(day, Number.parseInt(schedule.timeOfDay.slice(0, 2), 10), Number.parseInt(schedule.timeOfDay.slice(3), 10)),
+          status: missed ? 'MISSED' : 'TAKEN',
+          notes: missed ? 'Forgot while commuting' : null,
+        },
+      })
+    }
+
+    await prisma.medicationLog.create({
+      data: {
+        patientId: bjornId,
+        scheduleId: bjornMed.id,
+        datetime: daysAgo(day, 8, 30),
+        status: day % 6 === 0 ? 'MISSED' : 'TAKEN',
+      },
+    })
+  }
+
+  const pastaCanonicalId = await upsertCanonical('pasta')
+  const coffeeCanonicalId = await upsertCanonical('kaffe')
+  const laxCanonicalId = await upsertCanonical('lax')
+  const yogurtCanonicalId = await upsertCanonical('yoghurt')
+
+  await prisma.favoriteFood.createMany({
+    data: [
+      { patientId: annaId, rawInput: 'pasta', canonicalFoodId: pastaCanonicalId },
+      { patientId: annaId, rawInput: 'kaffe', canonicalFoodId: coffeeCanonicalId },
+      { patientId: annaId, rawInput: 'yoghurt', canonicalFoodId: yogurtCanonicalId },
+      { patientId: bjornId, rawInput: 'lax', canonicalFoodId: laxCanonicalId },
+      { patientId: bjornId, rawInput: 'havregrynsgröt' },
+    ],
+  })
 
   const userCount = await prisma.user.count()
   const mealCount = await prisma.mealLog.count()
   const symptomCount = await prisma.symptomLog.count()
   const foodCount = await prisma.foodCanonical.count()
+  const reminderCount = await prisma.symptomReminder.count()
+  const waterCount = await prisma.waterLog.count()
+  const goalCount = await prisma.patientGoal.count()
+  const carePlanCount = await prisma.carePlan.count()
 
   console.log(`✓ Users: ${userCount}`)
   console.log(`✓ Meal logs: ${mealCount}`)
   console.log(`✓ Symptom logs: ${symptomCount}`)
   console.log(`✓ Canonical foods: ${foodCount}`)
+  console.log(`✓ Reminders: ${reminderCount}`)
+  console.log(`✓ Water logs: ${waterCount}`)
+  console.log(`✓ Goals: ${goalCount}`)
+  console.log(`✓ Care plans: ${carePlanCount}`)
   console.log('Seed complete!')
 }
 

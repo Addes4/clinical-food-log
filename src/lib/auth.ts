@@ -21,6 +21,7 @@ export const authOptions: NextAuthOptions = {
           include: {
             patientProfile: true,
             clinicianProfile: true,
+            adminProfile: true,
           },
         })
 
@@ -32,7 +33,11 @@ export const authOptions: NextAuthOptions = {
         const profileId =
           user.role === 'PATIENT'
             ? user.patientProfile?.id ?? ''
-            : user.clinicianProfile?.id ?? ''
+            : user.role === 'CLINICIAN'
+              ? user.clinicianProfile?.id ?? ''
+              : user.role === 'ADMIN'
+                ? user.adminProfile?.id ?? user.id
+                : ''
 
         // Prevent creating a session that cannot be mapped to a role profile.
         if (!profileId) return null

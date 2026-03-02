@@ -9,6 +9,7 @@ import {
   requireSession,
 } from '@/lib/api-helpers'
 import { prisma } from '@/lib/db'
+import { findDuplicateContextLog } from '@/lib/duplicates'
 
 const EXERCISE_TYPES = ['NONE', 'LIGHT', 'MODERATE', 'INTENSE'] as const
 
@@ -51,6 +52,21 @@ export async function POST(req: NextRequest) {
   }
   if (notes !== undefined && notes !== null && typeof notes !== 'string') {
     return badRequest('notes must be a string')
+  }
+
+  const duplicateId = await findDuplicateContextLog({
+    patientId: session!.user.profileId,
+    datetime: parsedDate.value,
+    stressScore,
+    sleepHours,
+    alcohol,
+    exercise,
+  })
+  if (duplicateId) {
+    return NextResponse.json(
+      { error: 'Possible duplicate context log detected.', duplicateId },
+      { status: 409 }
+    )
   }
 
   const log = await prisma.contextLog.create({

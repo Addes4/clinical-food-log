@@ -9,6 +9,7 @@ import {
 } from '@/lib/api-helpers'
 import { prisma } from '@/lib/db'
 import { normalizeFood } from '@/lib/food-normalization'
+import { findDuplicateMealLog } from '@/lib/duplicates'
 
 const MEAL_TYPES = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK', 'OTHER'] as const
 
@@ -91,13 +92,28 @@ export async function POST(req: NextRequest) {
   }
 
   const patientId = session!.user.profileId
+  const cleanedTitle = title.trim()
+
+  const duplicateId = await findDuplicateMealLog({
+    patientId,
+    datetime: parsedDate.value,
+    mealType,
+    title: cleanedTitle,
+    foodInputs: parsedFoodItems.value.map((item) => item.rawInput),
+  })
+  if (duplicateId) {
+    return NextResponse.json(
+      { error: 'Possible duplicate meal log detected.', duplicateId },
+      { status: 409 }
+    )
+  }
 
   const mealLog = await prisma.mealLog.create({
     data: {
       patientId,
       datetime: parsedDate.value,
       mealType,
-      title: title.trim(),
+      title: cleanedTitle,
       notes: typeof notes === 'string' && notes.trim() ? notes.trim() : null,
       foodItems: {
         create: await Promise.all(
@@ -129,6 +145,34 @@ export async function POST(req: NextRequest) {
     },
     include: { foodItems: { include: { canonicalFood: true } } },
   })
+
+  for (const item of parsedFoodItems.value) {
+    const normalized = normalizeFood(item.rawInput)
+    let canonicalFoodId: string | undefined
+    if (normalized.confidence >= 0.5) {
+      const canonical = await prisma.foodCanonical.upsert({
+        where: { name: normalized.canonical },
+        create: { name: normalized.canonical },
+        update: {},
+      })
+      canonicalFoodId = canonical.id
+    }
+
+    await prisma.favoriteFood.upsert({
+      where: {
+        patientId_rawInput: {
+          patientId,
+          rawInput: item.rawInput.toLowerCase(),
+        },
+      },
+      create: {
+        patientId,
+        rawInput: item.rawInput.toLowerCase(),
+        canonicalFoodId,
+      },
+      update: { canonicalFoodId },
+    })
+  }
 
   return NextResponse.json(mealLog, { status: 201 })
 }

@@ -1,4 +1,4 @@
-export type Role = 'PATIENT' | 'CLINICIAN'
+export type Role = 'PATIENT' | 'CLINICIAN' | 'ADMIN'
 export type MealType = 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK' | 'OTHER'
 export type Exercise = 'NONE' | 'LIGHT' | 'MODERATE' | 'INTENSE'
 

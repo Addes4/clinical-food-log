@@ -15,11 +15,12 @@ model User {
   id           String   @id @default(cuid())
   email        String   @unique
   passwordHash String
-  role         String   // PATIENT | CLINICIAN
+  role         String   // PATIENT | CLINICIAN | ADMIN
   createdAt    DateTime @default(now())
 
   patientProfile   PatientProfile?
   clinicianProfile ClinicianProfile?
+  adminProfile     AdminProfile?
 }
 
 model PatientProfile {
@@ -27,11 +28,18 @@ model PatientProfile {
   userId      String @unique
   displayName String
 
-  user        User                         @relation(fields: [userId], references: [id])
-  assignments ClinicianPatientAssignment[]
-  mealLogs    MealLog[]
-  symptomLogs SymptomLog[]
-  contextLogs ContextLog[]
+  user                 User                         @relation(fields: [userId], references: [id])
+  assignments          ClinicianPatientAssignment[]
+  mealLogs             MealLog[]
+  symptomLogs          SymptomLog[]
+  contextLogs          ContextLog[]
+  symptomReminders     SymptomReminder[]
+  favoriteFoods        FavoriteFood[]
+  medicationSchedules  MedicationSchedule[]
+  medicationLogs       MedicationLog[]
+  waterLogs            WaterLog[]
+  carePlans            CarePlan[]
+  goals                PatientGoal[]
 }
 
 model ClinicianProfile {
@@ -41,6 +49,16 @@ model ClinicianProfile {
 
   user        User                         @relation(fields: [userId], references: [id])
   assignments ClinicianPatientAssignment[]
+  carePlans   CarePlan[]
+}
+
+model AdminProfile {
+  id          String @id @default(cuid())
+  userId      String @unique
+  displayName String
+  clinicName  String?
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 model ClinicianPatientAssignment {
@@ -87,8 +105,9 @@ model FoodCanonical {
   name     String  @unique
   category String?
 
-  foodItems MealFoodItem[]
-  synonyms  FoodSynonym[]
+  foodItems     MealFoodItem[]
+  synonyms      FoodSynonym[]
+  favoriteFoods FavoriteFood[]
 }
 
 model FoodSynonym {
@@ -126,4 +145,103 @@ model ContextLog {
   notes           String?
 
   patient PatientProfile @relation(fields: [patientId], references: [id])
+}
+
+model SymptomReminder {
+  id              String   @id @default(cuid())
+  patientId       String
+  label           String
+  timeOfDay       String // HH:mm
+  enabled         Boolean  @default(true)
+  snoozeMinutes   Int      @default(15)
+  quietHoursStart String? // HH:mm
+  quietHoursEnd   String? // HH:mm
+  snoozedUntil    DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  patient PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
+}
+
+model FavoriteFood {
+  id              String   @id @default(cuid())
+  patientId       String
+  rawInput        String
+  canonicalFoodId String?
+  createdAt       DateTime @default(now())
+
+  patient       PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  canonicalFood FoodCanonical? @relation(fields: [canonicalFoodId], references: [id])
+
+  @@unique([patientId, rawInput])
+}
+
+model MedicationSchedule {
+  id             String   @id @default(cuid())
+  patientId      String
+  medicationName String
+  dosage         String?
+  instructions   String?
+  timeOfDay      String // HH:mm
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  patient PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  logs    MedicationLog[]
+}
+
+model MedicationLog {
+  id         String   @id @default(cuid())
+  patientId  String
+  scheduleId String?
+  datetime   DateTime
+  status     String // TAKEN | MISSED
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  patient  PatientProfile      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  schedule MedicationSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+}
+
+model WaterLog {
+  id        String   @id @default(cuid())
+  patientId String
+  datetime  DateTime
+  amountMl  Int
+  createdAt DateTime @default(now())
+
+  patient PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
+}
+
+model CarePlan {
+  id                String   @id @default(cuid())
+  patientId         String
+  clinicianId       String
+  title             String
+  goals             String
+  notes             String?
+  lastUpdatedByRole String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  patient   PatientProfile   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinician ClinicianProfile @relation(fields: [clinicianId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, clinicianId])
+}
+
+model PatientGoal {
+  id          String   @id @default(cuid())
+  patientId   String
+  metric      String // ADHERENCE_RATE | WATER_DAILY_ML
+  targetValue Float
+  periodDays  Int      @default(21)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  patient PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, metric])
 }

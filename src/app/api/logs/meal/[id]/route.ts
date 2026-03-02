@@ -145,6 +145,34 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     include: { foodItems: { include: { canonicalFood: true } } },
   })
 
+  for (const item of parsedFoodItems.value) {
+    const normalized = normalizeFood(item.rawInput)
+    let canonicalFoodId: string | undefined
+    if (normalized.confidence >= 0.5) {
+      const canonical = await prisma.foodCanonical.upsert({
+        where: { name: normalized.canonical },
+        create: { name: normalized.canonical },
+        update: {},
+      })
+      canonicalFoodId = canonical.id
+    }
+
+    await prisma.favoriteFood.upsert({
+      where: {
+        patientId_rawInput: {
+          patientId: session!.user.profileId,
+          rawInput: item.rawInput.toLowerCase(),
+        },
+      },
+      create: {
+        patientId: session!.user.profileId,
+        rawInput: item.rawInput.toLowerCase(),
+        canonicalFoodId,
+      },
+      update: { canonicalFoodId },
+    })
+  }
+
   return NextResponse.json(updated)
 }
 

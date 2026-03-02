@@ -9,7 +9,7 @@
     "lint": "node scripts/lint.js",
     "test": "jest --passWithNoTests",
     "db:push": "prisma db push",
-    "db:seed": "tsx prisma/seed.ts",
+    "db:seed": "node --import tsx prisma/seed.ts",
     "db:studio": "prisma studio"
   },
   "dependencies": {

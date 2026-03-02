@@ -7,7 +7,10 @@ export default async function ClinicianLayout({ children }: { children: React.Re
   const session = await getServerSession(authOptions)
 
   if (!session) redirect('/signin')
-  if (session.user.role !== 'CLINICIAN') redirect('/dashboard')
+  if (session.user.role !== 'CLINICIAN') {
+    if (session.user.role === 'PATIENT') redirect('/dashboard')
+    redirect('/admin/onboarding')
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

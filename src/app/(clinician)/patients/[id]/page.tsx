@@ -8,6 +8,7 @@ import { TimelineEntry } from '@/components/TimelineEntry'
 import { computeTriggers } from '@/lib/analytics/triggers'
 import { computeDailyAverages } from '@/lib/analytics/averages'
 import { computeAdherence } from '@/lib/analytics/adherence'
+import { CarePlanEditor } from '@/components/CarePlanEditor'
 
 export default async function PatientDetailPage({ params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions)
@@ -45,7 +46,6 @@ export default async function PatientDetailPage({ params }: { params: { id: stri
     computeAdherence(patientId),
   ])
 
-  // Merge all entries for timeline
   type AnyEntry =
     | { type: 'meal'; datetime: Date; data: typeof meals[0] }
     | { type: 'symptom'; datetime: Date; data: typeof symptoms[0] }
@@ -63,6 +63,8 @@ export default async function PatientDetailPage({ params }: { params: { id: stri
         dailyAverages.length
       : null
 
+  const stoolTrend = symptoms.filter((s) => s.bristolScale != null).slice(0, 14).reverse()
+
   return (
     <div className="space-y-6">
       <div>
@@ -70,7 +72,6 @@ export default async function PatientDetailPage({ params }: { params: { id: stri
         <p className="text-sm text-gray-500">{patient.user.email}</p>
       </div>
 
-      {/* Summary stats */}
       <div className="grid grid-cols-3 gap-4">
         <Card>
           <CardContent className="py-4">
@@ -85,9 +86,7 @@ export default async function PatientDetailPage({ params }: { params: { id: stri
         </Card>
         <Card>
           <CardContent className="py-4">
-            <div className="text-2xl font-bold text-gray-900">
-              {overallAvg !== null ? overallAvg.toFixed(1) : '—'}
-            </div>
+            <div className="text-2xl font-bold text-gray-900">{overallAvg !== null ? overallAvg.toFixed(1) : '—'}</div>
             <div className="text-xs text-gray-500">Avg symptom score</div>
             {overallAvg !== null && (
               <div className="mt-1">
@@ -106,14 +105,48 @@ export default async function PatientDetailPage({ params }: { params: { id: stri
         </Card>
       </div>
 
-      {/* Possible triggers */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-sm font-semibold text-gray-700">Shared Care Plan</h2>
+          <p className="text-xs text-gray-400">Editable by both clinician and patient.</p>
+        </CardHeader>
+        <CardContent>
+          <CarePlanEditor patientId={patientId} editable />
+        </CardContent>
+      </Card>
+
+      {stoolTrend.length > 0 && (
+        <Card>
+          <CardHeader>
+            <h2 className="text-sm font-semibold text-gray-700">Stool Pattern Trend (Bristol)</h2>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-7 gap-2">
+              {stoolTrend.map((log) => (
+                <div key={log.id} className="text-center">
+                  <div className="text-[10px] text-gray-400 mb-1">
+                    {new Date(log.datetime).toLocaleDateString('sv-SE', { day: '2-digit', month: '2-digit' })}
+                  </div>
+                  <div className="h-20 rounded bg-gray-100 flex items-end justify-center">
+                    <div
+                      className="w-6 rounded-t bg-blue-500"
+                      style={{ height: `${((log.bristolScale ?? 1) / 7) * 100}%` }}
+                    />
+                  </div>
+                  <div className="text-xs text-gray-700 mt-1">{log.bristolScale}</div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {triggers.length > 0 && (
         <Card>
           <CardHeader>
             <h2 className="text-sm font-semibold text-gray-700">Possible Food Associations</h2>
             <p className="text-xs text-gray-400">
-              Foods eaten in the 24h before high-symptom events (avg score ≥5). These are possible
-              associations, not causation.
+              Foods eaten in the 24h before high-symptom events (avg score ≥5). These are possible associations, not causation.
             </p>
           </CardHeader>
           <CardContent>
@@ -126,10 +159,7 @@ export default async function PatientDetailPage({ params }: { params: { id: stri
                       {trigger.associatedOccurrences}/{trigger.totalOccurrences} times
                     </span>
                     <div className="w-24 bg-gray-100 rounded-full h-2">
-                      <div
-                        className="bg-orange-400 h-2 rounded-full"
-                        style={{ width: `${trigger.associationRate * 100}%` }}
-                      />
+                      <div className="bg-orange-400 h-2 rounded-full" style={{ width: `${trigger.associationRate * 100}%` }} />
                     </div>
                     <span className="text-xs font-medium text-gray-700 w-10 text-right">
                       {Math.round(trigger.associationRate * 100)}%
@@ -142,7 +172,6 @@ export default async function PatientDetailPage({ params }: { params: { id: stri
         </Card>
       )}
 
-      {/* Symptom trend (last 14 days) */}
       {dailyAverages.length > 0 && (
         <Card>
           <CardHeader>
@@ -165,26 +194,10 @@ export default async function PatientDetailPage({ params }: { params: { id: stri
                   {dailyAverages.slice(-14).reverse().map((day) => (
                     <tr key={day.date} className="border-b border-gray-50">
                       <td className="py-1 pr-4 text-gray-600">{day.date}</td>
-                      <td className="text-right pr-3">
-                        <span className={day.painScore >= 5 ? 'text-red-600 font-medium' : 'text-gray-700'}>
-                          {day.painScore.toFixed(1)}
-                        </span>
-                      </td>
-                      <td className="text-right pr-3">
-                        <span className={day.bloatingScore >= 5 ? 'text-red-600 font-medium' : 'text-gray-700'}>
-                          {day.bloatingScore.toFixed(1)}
-                        </span>
-                      </td>
-                      <td className="text-right pr-3">
-                        <span className={day.urgencyScore >= 5 ? 'text-red-600 font-medium' : 'text-gray-700'}>
-                          {day.urgencyScore.toFixed(1)}
-                        </span>
-                      </td>
-                      <td className="text-right pr-3">
-                        <span className={day.nauseaScore >= 5 ? 'text-red-600 font-medium' : 'text-gray-700'}>
-                          {day.nauseaScore.toFixed(1)}
-                        </span>
-                      </td>
+                      <td className="text-right pr-3">{day.painScore.toFixed(1)}</td>
+                      <td className="text-right pr-3">{day.bloatingScore.toFixed(1)}</td>
+                      <td className="text-right pr-3">{day.urgencyScore.toFixed(1)}</td>
+                      <td className="text-right pr-3">{day.nauseaScore.toFixed(1)}</td>
                       <td className="text-right text-gray-400">{day.count}</td>
                     </tr>
                   ))}
@@ -195,14 +208,11 @@ export default async function PatientDetailPage({ params }: { params: { id: stri
         </Card>
       )}
 
-      {/* Timeline */}
       <div>
         <h2 className="text-sm font-semibold text-gray-700 mb-3">Recent Timeline</h2>
         {allEntries.length === 0 ? (
           <Card>
-            <CardContent className="py-8 text-center text-sm text-gray-400">
-              No logs yet.
-            </CardContent>
+            <CardContent className="py-8 text-center text-sm text-gray-400">No logs yet.</CardContent>
           </Card>
         ) : (
           <div className="space-y-2">
